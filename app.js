@@ -4,7 +4,7 @@ import * as api from "./api.js";
 import * as D from "./dates.js";
 import { renderSettings, initSettings } from "./settings.js";
 import * as T from "./tags.js";
-import { tagsWidget } from "./tagsui.js";
+import { tagsWidget, countsWidget } from "./tagsui.js";
 
 const dayPath = d => `days/${d}.json`;
 const activeFields = () => (S.config?.fields || []).filter(f => f.active !== false);
@@ -50,18 +50,39 @@ function setDraft(data, ops) {
     } else if (Array.isArray(box[f.id])) box[f.id] = T.resolveSelection(opts, box[f.id]);
     else if (where === "main") box[f.id] = [];
   }
-  S.draft = { values, details, legacy, pending: (ops || []).map(o => ({ ...o })), note: data?.note || "" };
+  // v3: liczniki per rodzaj. Stare dni: tablica tagów -> rodzaje z licznikiem 0; sama suma -> "bez podziału".
+  const legacyKinds = {}, noSplit = {};
+  for (const f of activeFields()) {
+    if (!T.hasCounts(f)) continue;
+    const opts = f.detail.options || [], raw = details[f.id], total = Number(values[f.id]) || 0;
+    if (Array.isArray(raw)) { legacyKinds[f.id] = T.resolveSelection(opts, raw); noSplit[f.id] = total; details[f.id] = {}; }
+    else if (T.isCounts(raw)) {
+      details[f.id] = T.resolveCounts(opts, raw);
+      noSplit[f.id] = T.sumCounts(details[f.id]) > 0 ? 0 : total;
+    } else { details[f.id] = {}; noSplit[f.id] = total > 0 ? total : 0; }
+    values[f.id] = T.dayTotal(details[f.id], noSplit[f.id]);
+  }
+  S.draft = { values, details, legacy, legacyKinds, noSplit, pending: (ops || []).map(o => ({ ...o })), note: data?.note || "" };
   S.saved = data?.updatedAt || null;
 }
 
 function buildData() {
   const fields = S.config.fields, byId = Object.fromEntries(fields.map(f => [f.id, f]));
   const values = { ...S.draft.values }, details = {};
+  for (const f of fields) if (T.hasCounts(f) && f.active !== false) values[f.id] = T.dayTotal(S.draft.details[f.id], S.draft.noSplit?.[f.id]);
   let note = S.draft.note.trim();
   for (const [id, v] of Object.entries(S.draft.details)) {
     const f = byId[id];
+    if (T.isCounts(v)) {
+      const c = T.resolveCounts(f?.detail?.options || [], v);
+      if (T.sumCounts(c) > 0 && (!f || f.active === false || isPos(values[id]))) details[id] = c;
+      continue;
+    }
     if (v === "" || v == null || (Array.isArray(v) && !v.length) || (f && f.active !== false && !isPos(values[id]))) continue;
     details[id] = v;
+  }
+  for (const [id, kinds] of Object.entries(S.draft.legacyKinds || {})) {
+    if (!details[id] && isPos(values[id])) details[id] = kinds; // brak podziału: wcześniejsze rodzaje zostają bez zmian
   }
   for (const [id, old] of Object.entries(S.draft.legacy || {})) {
     const f = byId[id];
@@ -76,7 +97,7 @@ function buildData() {
 function buildOps() {
   return S.draft.pending.filter(p => {
     const a = (p.where === "main" ? S.draft.values : S.draft.details)[p.fid];
-    return Array.isArray(a) && a.includes(p.id);
+    return Array.isArray(a) ? a.includes(p.id) : T.isCounts(a) && Number(a[p.id]) > 0;
   });
 }
 
@@ -250,6 +271,7 @@ function fieldEl(f) {
     main = h("label", { class: "wide" }, h("span", { class: "lbl" }, f.label),
       h("input", { type: "text", value: v ?? "", oninput: e => { S.draft.values[f.id] = e.target.value; touch(); } }));
   }
+  if (T.hasCounts(f)) return countsWidget(f, touch);
   if (!f.detail || !isPos(v)) return main;
   const d = f.detail, num = d.type === "number";
   if (d.type === "tags") {

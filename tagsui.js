@@ -84,3 +84,93 @@ export function tagsWidget(f, where, touch) {
   draw();
   return h("div", { class: "tags" }, chipsEl, input, suggEl);
 }
+
+/* ---------- v3: liczniki per rodzaj (`counts`) ---------- */
+
+const expanded = new Set(); // pola rozwinięte ręcznie (przeżywa przerysowanie ekranu)
+
+// Wiersz pola `count` z detalem `counts`: suma + rozwijana lista rodzajów z − liczba +.
+export function countsWidget(f, touch) {
+  const where = "detail", D_ = S.draft;
+  const split = () => (D_.details[f.id] ||= {});
+  const noSplit = () => D_.noSplit?.[f.id] || 0;
+  const pending = () => S.draft.pending;
+  const counts = usage(f, where, effectiveOptions(f, where));
+  const label = f.detail.label || "Rodzaj";
+
+  const sumEl = h("output", {}), toggleBtn = h("button", { type: "button", class: "btn ghost small" });
+  const infoEl = h("div"), rowsEl = h("div", { class: "cntrows" }), suggEl = h("div", { class: "sugg" });
+  const input = h("input", { type: "text", placeholder: "Dodaj rodzaj…", autocomplete: "off", enterkeyhint: "done", "aria-label": "Dodaj rodzaj: " + f.label });
+  const body = h("div", { class: "detail" }, h("span", {}, label), infoEl, rowsEl, input, suggEl);
+
+  const total = () => T.dayTotal(split(), noSplit());
+  function change() { D_.values[f.id] = total(); touch(); draw(); }
+  function setN(id, n) {
+    const s = split();
+    if (n > 0) s[id] = n; else {
+      delete s[id];
+      S.draft.pending = pending().filter(p => !(p.fid === f.id && p.where === where && p.id === id && p.kind === "add")); // wyzerowane = bez zmiany w config
+    }
+    change();
+  }
+  function pick(o) {
+    const eff = effectiveOptions(f, where), cur = eff.find(x => x.id === o.id) || o;
+    if (cur.active === false && !pending().some(p => p.fid === f.id && p.where === where && p.id === o.id))
+      pending().push({ fid: f.id, where, kind: "react", id: o.id, label: o.label });
+    if (!(split()[o.id] > 0)) setN(o.id, 1);
+    input.value = ""; draw();
+  }
+  function addNew(text) {
+    const lab = T.capFirst(text);
+    if (!lab) return;
+    const eff = effectiveOptions(f, where), m = T.findMatch(eff, lab);
+    if (m) return pick(m);
+    const id = T.uniqueSlug(lab, eff);
+    pending().push({ fid: f.id, where, kind: "add", id, label: lab });
+    setN(id, 1); input.value = ""; draw();
+  }
+
+  function draw() {
+    const eff = effectiveOptions(f, where), s = split(), t = total(), open = expanded.has(f.id) || t > 0;
+    const kinds = D_.legacyKinds?.[f.id] || [];
+    sumEl.replaceChildren(`${t}`, f.unit ? h("small", {}, " " + f.unit) : null);
+    toggleBtn.textContent = open ? "Zwiń" : "Rodzaje";
+    toggleBtn.setAttribute("aria-expanded", String(open));
+    toggleBtn.disabled = t > 0; // przy sumie > 0 lista jest zawsze rozwinięta
+    body.hidden = !open;
+
+    infoEl.replaceChildren();
+    if (noSplit() > 0 && T.sumCounts(s) === 0) infoEl.append(h("p", { class: "legacy" }, `bez podziału: ${noSplit()} `,
+      h("button", { type: "button", class: "btn ghost small", onclick: () => { D_.noSplit[f.id] = 0; change(); } }, "Wyzeruj")));
+    if (kinds.length && T.sumCounts(s) === 0) infoEl.append(h("p", { class: "legacy" },
+      "wcześniej zaznaczone bez liczby: " + kinds.map(id => eff.find(o => o.id === id)?.label || id).join(", ")));
+
+    const shown = eff.filter(o => T.isVisible(o) || s[o.id] > 0 || kinds.includes(o.id));
+    for (const id of Object.keys(s)) if (!eff.some(o => o.id === id)) shown.push({ id, label: id });
+    rowsEl.replaceChildren(...T.rankOptions(shown, counts).map(o => {
+      const n = s[o.id] || 0;
+      return h("div", { class: "row cnt" }, h("span", { class: "lbl" }, o.label),
+        h("div", { class: "stepper" },
+          h("button", { type: "button", "aria-label": "Mniej: " + o.label, disabled: n <= 0, onclick: () => setN(o.id, n - 1) }, "−"),
+          h("output", {}, String(n)),
+          h("button", { type: "button", "aria-label": "Więcej: " + o.label, onclick: () => setN(o.id, n + 1) }, "+")));
+    }));
+    if (!shown.length) rowsEl.replaceChildren(h("span", { class: "hint" }, "Brak rodzajów. Wpisz poniżej, aby dodać pierwszy."));
+
+    const q = input.value, rows = [];
+    if (T.normalize(q)) {
+      const m = T.findMatch(eff, q), list = T.suggest(eff, q, Object.keys(s).filter(k => s[k] > 0));
+      if (m && !(s[m.id] > 0) && !list.some(o => o.id === m.id)) list.unshift(m);
+      for (const o of list) rows.push(h("button", { type: "button", class: "sugg-i", onclick: () => pick(o) },
+        o.label, o.active === false ? h("small", {}, " (ukryty, przywróć)") : null));
+      if (!m) rows.push(h("button", { type: "button", class: "sugg-i add", onclick: () => addNew(q) }, `+ Dodaj „${T.capFirst(q)}”`));
+    }
+    suggEl.replaceChildren(...rows);
+  }
+
+  toggleBtn.addEventListener("click", () => { if (expanded.has(f.id)) expanded.delete(f.id); else expanded.add(f.id); draw(); });
+  input.addEventListener("input", draw);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addNew(input.value); } });
+  draw();
+  return h("div", { class: "wide" }, h("div", { class: "row wide" }, h("span", { class: "lbl" }, f.label), sumEl, toggleBtn), body);
+}

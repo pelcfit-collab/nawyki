@@ -251,7 +251,7 @@ function optionsEditor(c) {
   }
   const drawRows = () => rows.replaceChildren(...opts.map(rowEl), ...(opts.length ? [] : [h("p", { class: "hint" }, "Brak opcji.")]));
 
-  const input = h("input", { type: "text", placeholder: "Nowa opcja, np. Ból ucha", "aria-label": "Nowa opcja" });
+  const input = h("input", { type: "text", placeholder: c.type === "counts" ? "Nowy rodzaj, np. Whisky" : "Nowa opcja, np. Ból ucha", "aria-label": "Nowa opcja" });
   const add = () => {
     const label = T.capFirst(input.value);
     if (!label) return;
@@ -278,13 +278,15 @@ function fieldCard(f, i, n, move, redraw) {
   else def = h("input", { type: "number", value: f.default ?? defaultOf(f), min: f.min ?? 0, max: f.max, oninput: e => { f.default = parseInt(e.target.value, 10) || 0; dirty(); } });
   const det = f.detail;
   const detBox = det ? h("div", { class: "sub" },
-    labeled("Typ szczegółu", h("select", { onchange: e => { det.type = e.target.value; if (det.type === "tags") det.options ||= []; redraw(); } },
+    labeled("Typ szczegółu", h("select", { onchange: e => { det.type = e.target.value; if (det.type === "tags" || det.type === "counts") det.options ||= []; redraw(); } },
       h("option", { value: "tags", selected: det.type === "tags" }, "lista (tagi)"),
+      f.type === "count" ? h("option", { value: "counts", selected: det.type === "counts" }, "liczniki per rodzaj (counts)") : null,
       h("option", { value: "number", selected: det.type === "number" }, "liczba"),
       h("option", { value: "text", selected: det.type === "text" }, "tekst (tylko notatka, nie do statystyk)"))),
     labeled("Etykieta szczegółu", h("input", { type: "text", value: det.label || "", oninput: e => { det.label = e.target.value; dirty(); } })),
     det.type === "number" ? labeled("Jednostka szczegółu", h("input", { type: "text", value: det.unit || "", oninput: e => { det.unit = e.target.value; dirty(); } })) : null,
-    det.type === "tags" ? optionsEditor(det) : null,
+    det.type === "tags" || (det.type === "counts" && f.type === "count") ? optionsEditor(det) : null,
+    det.type === "counts" ? h("p", { class: "hint" }, f.type === "count" ? "Na ekranie Dziś każdy rodzaj ma własny licznik, a wartość pola to ich suma." : "Liczniki per rodzaj działają tylko dla pola typu licznik.") : null,
     det.type === "text" ? h("p", { class: "hint" }, "Wolny tekst nie trafia do statystyk. Do powtarzalnych danych wybierz listę (tagi).") : null) : null;
   return h("details", { class: "fcard" + (f.active === false ? " off" : "") },
     h("summary", {}, h("span", {}, f.label || f.id), h("small", {}, ` ${f.group || ""}${f.active === false ? " · nieaktywne" : ""}`),
@@ -313,7 +315,7 @@ function addFieldForm(redraw) {
   const unit = q("input", { type: "text", placeholder: "np. porcje (licznik)" });
   const scale = q("input", { type: "text", placeholder: "np. brak, lekko, mocno (skala)" });
   const detOn = q("input", { type: "checkbox" });
-  const detType = q("select", {}, q("option", { value: "tags" }, "lista (tagi)"), q("option", { value: "number" }, "liczba"), q("option", { value: "text" }, "tekst (tylko notatka, nie do statystyk)"));
+  const detType = q("select", {}, q("option", { value: "tags" }, "lista (tagi)"), q("option", { value: "counts" }, "liczniki per rodzaj (tylko dla licznika)"), q("option", { value: "number" }, "liczba"), q("option", { value: "text" }, "tekst (tylko notatka, nie do statystyk)"));
   const opts = q("input", { type: "text", placeholder: "np. Katar, Kaszel, Ból głowy (lista)" });
   const detOpts = q("input", { type: "text", placeholder: "Opcje szczegółu po przecinku (lista)" });
   const detLabel = q("input", { type: "text", placeholder: "Etykieta szczegółu, np. Ile minut?" });
@@ -331,9 +333,10 @@ function addFieldForm(redraw) {
         if (ls.length < 2) return say("fld", "Skala wymaga co najmniej 2 etykiet po przecinku.", "bad");
         Object.assign(f, { min: 0, max: ls.length - 1, scaleLabels: ls });
       }
+      if (detOn.checked && detType.value === "counts" && t !== "count") return say("fld", "Liczniki per rodzaj działają tylko dla pola typu licznik.", "bad");
       if (detOn.checked) {
         f.detail = { type: detType.value, label: detLabel.value.trim() || "Szczegóły", showWhen: "positive", ...(detType.value === "number" && unit.value.trim() && t !== "count" ? { unit: unit.value.trim() } : {}) };
-        if (detType.value === "tags") f.detail.options = parseOptions(detOpts.value);
+        if (detType.value === "tags" || detType.value === "counts") f.detail.options = parseOptions(detOpts.value);
       }
       f.active = true;
       S.edit.fields.push(f);

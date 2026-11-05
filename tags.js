@@ -69,11 +69,32 @@ export function countUsage(days, fid, where, options, since = "") {
   const counts = {};
   for (const d of days || []) {
     if (!d || (since && d.date < since)) continue;
-    const arr = (where === "main" ? d.values : d.details)?.[fid];
-    if (!Array.isArray(arr)) continue;
+    const raw = (where === "main" ? d.values : d.details)?.[fid];
+    // tagi: tablica id; liczniki (v3): obiekt { id: liczba } -> użyte rodzaje (> 0)
+    const arr = Array.isArray(raw) ? raw : isCounts(raw) ? Object.keys(raw).filter(k => Number(raw[k]) > 0) : null;
+    if (!arr) continue;
     for (const id of new Set(arr.map(x => resolveMerged(options, x)))) counts[id] = (counts[id] || 0) + 1;
   }
   return counts;
+}
+
+/* ---------- liczniki per opcja (v3, `counts`) ---------- */
+
+export const isCounts = v => !!v && typeof v === "object" && !Array.isArray(v);
+
+// Suma wartości > 0.
+export const sumCounts = obj => Object.values(obj || {}).reduce((a, n) => a + (Number(n) > 0 ? Number(n) : 0), 0);
+
+// { id: n } -> tylko n > 0, id po rozwiązaniu scaleń, scalone opcje sumują się.
+export function resolveCounts(options, obj) {
+  const out = {};
+  for (const [id, n] of Object.entries(obj || {})) {
+    const v = Number(n);
+    if (!(v > 0)) continue;
+    const t = resolveMerged(options, id);
+    out[t] = (out[t] || 0) + v;
+  }
+  return out;
 }
 
 // Najczęściej używane najpierw, potem alfabetycznie (pl).
@@ -120,6 +141,11 @@ export function applyRemap(data, remap) {
   const fix = (obj, where) => {
     for (const [fid, arr] of Object.entries(obj || {})) {
       if (Array.isArray(arr)) obj[fid] = [...new Set(arr.map(x => remap[`${fid}|${where}|${x}`] ?? x))];
+      else if (isCounts(arr)) {
+        const o = {};
+        for (const [k, n] of Object.entries(arr)) { const t = remap[`${fid}|${where}|${k}`] ?? k; o[t] = (o[t] || 0) + Number(n); }
+        obj[fid] = o;
+      }
     }
   };
   fix(out.values, "main"); fix(out.details, "detail");
@@ -131,3 +157,9 @@ export function opsMessage(ops) {
   if (added.length) return `config: nowe opcje (${added.join(", ")})`;
   return "config: przywrócone opcje";
 }
+
+// Pole count z detalem `counts` (v3): values[id] = suma z details[id] = { opcja: liczba }.
+export const hasCounts = f => f?.type === "count" && f.detail?.type === "counts";
+
+// Suma dnia: z podziału, a gdy go nie ma - stara suma bez podziału.
+export const dayTotal = (split, noSplit) => { const s = sumCounts(split); return s > 0 ? s : Number(noSplit) || 0; };

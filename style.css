@@ -159,3 +159,7 @@ input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--accent); }
 .opt .mrow select { flex: 1; min-width: 140px; }
 .optadd { display: flex; gap: 8px; align-items: center; }
 .optadd .btn { padding: 0 16px; }
+
+/* liczniki per rodzaj (v3) */
+.row.cnt { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; }
+.btn.small { min-height: 44px; padding: 4px 12px; font-size: .85rem; }
