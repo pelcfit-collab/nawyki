@@ -88,6 +88,7 @@ export function tagsWidget(f, where, touch) {
 /* ---------- v3: liczniki per rodzaj (`counts`) ---------- */
 
 const expanded = new Set(); // pola rozwinięte ręcznie (przeżywa przerysowanie ekranu)
+const collapsed = new Set(); // pola zwinięte ręcznie mimo sumy > 0
 
 // Wiersz pola `count` z detalem `counts`: suma + rozwijana lista rodzajów z − liczba +.
 export function countsWidget(f, touch) {
@@ -156,12 +157,13 @@ export function countsWidget(f, touch) {
   }
 
   function draw() {
-    const eff = effectiveOptions(f, where), s = split(), t = total(), open = expanded.has(f.id) || t > 0;
+    const eff = effectiveOptions(f, where), s = split(), t = total(), open = !collapsed.has(f.id) && (expanded.has(f.id) || t > 0);
     const kinds = D_.legacyKinds?.[f.id] || [];
-    sumEl.replaceChildren(`${t}`, f.unit ? h("small", {}, " " + f.unit) : null);
+    const brief = Object.entries(s).filter(([, n]) => n > 0).map(([id, n]) => `${eff.find(o => o.id === id)?.label || id} ×${n}`).join(", ");
+    sumEl.replaceChildren(`${t}`, f.unit ? h("small", {}, " " + f.unit) : null,
+      !open && brief ? h("small", { class: "brief" }, brief) : null);
     toggleBtn.textContent = open ? "Zwiń" : "Rodzaje";
     toggleBtn.setAttribute("aria-expanded", String(open));
-    toggleBtn.disabled = t > 0; // przy sumie > 0 lista jest zawsze rozwinięta
     body.hidden = !open;
 
     infoEl.replaceChildren();
@@ -179,7 +181,8 @@ export function countsWidget(f, touch) {
           h("button", { type: "button", "aria-label": "Mniej: " + o.label, disabled: n <= 0, onclick: () => setN(o.id, n - 1) }, "−"),
           h("output", {}, String(n)),
           h("button", { type: "button", "aria-label": "Więcej: " + o.label, onclick: () => setN(o.id, n + 1) }, "+")));
-      return timed && n > 0 ? h("div", {}, row, chipsRow(o, n)) : row;
+      if (timed && n > 0) row.append(chipsRow(o, n));
+      return row;
     }));
     if (openChip) { const oc = openChip; openChip = null; setTimeout(() => { const sel = rowsEl.querySelector(`select[data-k="${oc.id}"][data-i="${oc.i}"]`); try { sel?.showPicker(); } catch { sel?.focus(); } }, 0); }
     if (!shown.length) rowsEl.replaceChildren(h("span", { class: "hint" }, "Brak rodzajów. Wpisz poniżej, aby dodać pierwszy."));
@@ -195,7 +198,11 @@ export function countsWidget(f, touch) {
     suggEl.replaceChildren(...rows);
   }
 
-  toggleBtn.addEventListener("click", () => { if (expanded.has(f.id)) expanded.delete(f.id); else expanded.add(f.id); draw(); });
+  toggleBtn.addEventListener("click", () => {
+    const isOpen = !body.hidden;
+    if (isOpen) { collapsed.add(f.id); expanded.delete(f.id); } else { collapsed.delete(f.id); expanded.add(f.id); }
+    draw();
+  });
   input.addEventListener("input", draw);
   input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addNew(input.value); } });
   draw();
