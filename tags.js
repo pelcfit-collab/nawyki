@@ -149,6 +149,12 @@ export function applyRemap(data, remap) {
     }
   };
   fix(out.values, "main"); fix(out.details, "detail");
+  for (const [fid, kinds] of Object.entries(out.times || {})) {
+    const o = {};
+    for (const [k, arr] of Object.entries(kinds || {})) { const t = remap[`${fid}|detail|${k}`] ?? k; o[t] = [...(o[t] || []), ...(Array.isArray(arr) ? arr : [])]; }
+    for (const t of Object.keys(o)) o[t] = sortTimes(o[t]);
+    out.times[fid] = o;
+  }
   return out;
 }
 
@@ -163,3 +169,46 @@ export const hasCounts = f => f?.type === "count" && f.detail?.type === "counts"
 
 // Suma dnia: z podziału, a gdy go nie ma - stara suma bez podziału.
 export const dayTotal = (split, noSplit) => { const s = sumCounts(split); return s > 0 ? s : Number(noSplit) || 0; };
+
+/* ---------- godzina każdej porcji (v4, `withTime`) ---------- */
+// Dzień: times[fid][opcja] = [godzina 0-23 | null, ...], długość = licznik opcji.
+
+export const withTime = f => hasCounts(f) && f.detail.withTime === true;
+
+const okHour = x => Number.isInteger(x) && x >= 0 && x <= 23;
+
+// Rosnąco po godzinie, nieznane (null) na końcu.
+export const sortTimes = arr => (arr || []).map(x => (okHour(x) ? x : null)).sort((a, b) => (a === null) - (b === null) || a - b);
+
+// Dopasowuje długość do licznika: brakujące -> null, nadmiar odcięty, sort.
+export function fitTimes(arr, n) {
+  const a = sortTimes(Array.isArray(arr) ? arr : []);
+  while (a.length < n) a.push(null);
+  return sortTimes(a.slice(0, Math.max(0, n)));
+}
+
+// Godzina nowej porcji: dziś -> bieżąca godzina warszawska, dzień przeszły -> null.
+export const newPortionHour = (date, today, nowHour) => (date === today && okHour(nowHour) ? nowHour : null);
+
+export const addPortion = (arr, hour) => sortTimes([...(arr || []), okHour(hour) ? hour : null]);
+export const removePortion = arr => (arr || []).slice(0, -1);
+export function setHour(arr, i, hour) {
+  const a = [...(arr || [])]; a[i] = okHour(hour) ? hour : null;
+  return sortTimes(a);
+}
+
+// Scala godziny po rozwiązaniu scaleń (konkatenacja + sort); długość = rozwiązany licznik. Tylko opcje z licznikiem > 0.
+export function resolveTimes(options, counts, times) {
+  const merged = {};
+  for (const [id, arr] of Object.entries(times || {})) {
+    const t = resolveMerged(options, id);
+    merged[t] = [...(merged[t] || []), ...(Array.isArray(arr) ? arr : [])];
+  }
+  const out = {};
+  for (const [id, n] of Object.entries(counts || {})) if (Number(n) > 0) out[id] = fitTimes(merged[id], Number(n));
+  return out;
+}
+
+// Lista godzin do wyboru: 5..23, potem 0..4.
+export const HOURS = [...Array.from({ length: 19 }, (_, i) => i + 5), 0, 1, 2, 3, 4];
+export const fmtHour = x => (okHour(x) ? `${x}:00` : "?");

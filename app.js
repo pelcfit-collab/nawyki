@@ -51,7 +51,7 @@ function setDraft(data, ops) {
     else if (where === "main") box[f.id] = [];
   }
   // v3: liczniki per rodzaj. Stare dni: tablica tagów -> rodzaje z licznikiem 0; sama suma -> "bez podziału".
-  const legacyKinds = {}, noSplit = {};
+  const legacyKinds = {}, noSplit = {}, times = {};
   for (const f of activeFields()) {
     if (!T.hasCounts(f)) continue;
     const opts = f.detail.options || [], raw = details[f.id], total = Number(values[f.id]) || 0;
@@ -61,8 +61,9 @@ function setDraft(data, ops) {
       noSplit[f.id] = T.sumCounts(details[f.id]) > 0 ? 0 : total;
     } else { details[f.id] = {}; noSplit[f.id] = total > 0 ? total : 0; }
     values[f.id] = T.dayTotal(details[f.id], noSplit[f.id]);
+    if (T.withTime(f)) times[f.id] = T.resolveTimes(opts, details[f.id], data?.times?.[f.id]); // v4: stare dni bez times -> "?"
   }
-  S.draft = { values, details, legacy, legacyKinds, noSplit, pending: (ops || []).map(o => ({ ...o })), note: data?.note || "" };
+  S.draft = { values, details, legacy, legacyKinds, noSplit, times, rawTimes: data?.times || {}, pending: (ops || []).map(o => ({ ...o })), note: data?.note || "" };
   S.saved = data?.updatedAt || null;
 }
 
@@ -70,6 +71,13 @@ function buildData() {
   const fields = S.config.fields, byId = Object.fromEntries(fields.map(f => [f.id, f]));
   const values = { ...S.draft.values }, details = {};
   for (const f of fields) if (T.hasCounts(f) && f.active !== false) values[f.id] = T.dayTotal(S.draft.details[f.id], S.draft.noSplit?.[f.id]);
+  const times = {};
+  for (const [fid, t] of Object.entries(S.draft.rawTimes || {})) if (!T.withTime(byId[fid]) || byId[fid].active === false) times[fid] = t; // nie gubimy cudzych godzin
+  for (const f of fields) {
+    if (!T.withTime(f) || f.active === false) continue;
+    const t = T.resolveTimes(f.detail.options || [], T.resolveCounts(f.detail.options || [], S.draft.details[f.id]), S.draft.times?.[f.id]);
+    if (Object.keys(t).length) times[f.id] = t;
+  }
   let note = S.draft.note.trim();
   for (const [id, v] of Object.entries(S.draft.details)) {
     const f = byId[id];
@@ -90,7 +98,9 @@ function buildData() {
     if (!details[id]) details[id] = old; // brak wybranych tagów: stary tekst zostaje bez zmian
     else if (!note.includes(old)) note += (note ? "\n" : "") + `${f.label} (stary wpis): ${old}`; // nic nie ginie
   }
-  return { date: S.date, values, details, note, updatedAt: D.nowIso(), app: "nawyki/1" };
+  const out = { date: S.date, values, details, note, updatedAt: D.nowIso(), app: "nawyki/1" };
+  if (Object.keys(times).length) out.times = times;
+  return out;
 }
 
 // Nowe/reaktywowane opcje, które zostały wybrane (odznaczone nie trafiają do config).

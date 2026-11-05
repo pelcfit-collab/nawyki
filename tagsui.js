@@ -59,6 +59,18 @@ export function tagsWidget(f, where, touch) {
     input.value = ""; draw();
   }
 
+  // v4: po jednym chipie na porcję; natywny <select> przykrywa chip.
+  function chipsRow(o, n) {
+    const arr = T.fitTimes(timesOf()[o.id], n);
+    return h("div", { class: "timechips" }, arr.map((hr, i) => {
+      const sel = h("select", { "data-k": o.id, "data-i": String(i), "aria-label": `${o.label}, porcja ${i + 1}: godzina`,
+        onchange: e => { const v = e.target.value; timesOf()[o.id] = T.setHour(arr, i, v === "" ? null : Number(v)); D_.values[f.id] = total(); touch(); draw(); } },
+        h("option", { value: "", selected: hr === null }, "nie pamiętam"),
+        T.HOURS.map(x => h("option", { value: String(x), selected: hr === x }, T.fmtHour(x))));
+      return h("span", { class: "timechip" + (hr === null ? " unknown" : "") }, T.fmtHour(hr), sel);
+    }));
+  }
+
   function draw() {
     const eff = effectiveOptions(f, where), selected = new Set(sel());
     const shown = eff.filter(o => T.isVisible(o) || selected.has(o.id));
@@ -105,8 +117,21 @@ export function countsWidget(f, touch) {
 
   const total = () => T.dayTotal(split(), noSplit());
   function change() { D_.values[f.id] = total(); touch(); draw(); }
+  const timed = T.withTime(f);
+  const timesOf = () => ((D_.times ||= {})[f.id] ||= {});
+  let openChip = null; // { id, i } - chip, którego wybór godziny ma się otworzyć po przerysowaniu
   function setN(id, n) {
-    const s = split();
+    const s = split(), old = s[id] || 0;
+    if (timed) {
+      const tm = timesOf();
+      let arr = T.fitTimes(tm[id], old);
+      if (n > old) {
+        const hr = T.newPortionHour(S.date, D.todayStr(), D.warsawHour());
+        arr = T.addPortion(arr, hr);
+        if (hr === null) openChip = { id, i: arr.length - 1 }; // dzień przeszły: od razu wybór godziny
+      } else if (n < old) arr = T.removePortion(arr);
+      if (n > 0) tm[id] = arr; else delete tm[id];
+    }
     if (n > 0) s[id] = n; else {
       delete s[id];
       S.draft.pending = pending().filter(p => !(p.fid === f.id && p.where === where && p.id === id && p.kind === "add")); // wyzerowane = bez zmiany w config
@@ -149,12 +174,14 @@ export function countsWidget(f, touch) {
     for (const id of Object.keys(s)) if (!eff.some(o => o.id === id)) shown.push({ id, label: id });
     rowsEl.replaceChildren(...T.rankOptions(shown, counts).map(o => {
       const n = s[o.id] || 0;
-      return h("div", { class: "row cnt" }, h("span", { class: "lbl" }, o.label),
+      const row = h("div", { class: "row cnt" }, h("span", { class: "lbl" }, o.label),
         h("div", { class: "stepper" },
           h("button", { type: "button", "aria-label": "Mniej: " + o.label, disabled: n <= 0, onclick: () => setN(o.id, n - 1) }, "−"),
           h("output", {}, String(n)),
           h("button", { type: "button", "aria-label": "Więcej: " + o.label, onclick: () => setN(o.id, n + 1) }, "+")));
+      return timed && n > 0 ? h("div", {}, row, chipsRow(o, n)) : row;
     }));
+    if (openChip) { const oc = openChip; openChip = null; setTimeout(() => { const sel = rowsEl.querySelector(`select[data-k="${oc.id}"][data-i="${oc.i}"]`); try { sel?.showPicker(); } catch { sel?.focus(); } }, 0); }
     if (!shown.length) rowsEl.replaceChildren(h("span", { class: "hint" }, "Brak rodzajów. Wpisz poniżej, aby dodać pierwszy."));
 
     const q = input.value, rows = [];

@@ -286,6 +286,8 @@ function fieldCard(f, i, n, move, redraw) {
     labeled("Etykieta szczegółu", h("input", { type: "text", value: det.label || "", oninput: e => { det.label = e.target.value; dirty(); } })),
     det.type === "number" ? labeled("Jednostka szczegółu", h("input", { type: "text", value: det.unit || "", oninput: e => { det.unit = e.target.value; dirty(); } })) : null,
     det.type === "tags" || (det.type === "counts" && f.type === "count") ? optionsEditor(det) : null,
+    det.type === "counts" && f.type === "count" ? h("label", { class: "f chk" }, h("input", { type: "checkbox", checked: det.withTime === true,
+      onchange: e => { if (e.target.checked) det.withTime = true; else delete det.withTime; dirty(); } }), h("span", {}, "zapisuj godzinę każdej porcji")) : null,
     det.type === "counts" ? h("p", { class: "hint" }, f.type === "count" ? "Na ekranie Dziś każdy rodzaj ma własny licznik, a wartość pola to ich suma." : "Liczniki per rodzaj działają tylko dla pola typu licznik.") : null,
     det.type === "text" ? h("p", { class: "hint" }, "Wolny tekst nie trafia do statystyk. Do powtarzalnych danych wybierz listę (tagi).") : null) : null;
   return h("details", { class: "fcard" + (f.active === false ? " off" : "") },

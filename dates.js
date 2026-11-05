@@ -26,3 +26,6 @@ export function nowIso(d = new Date()) {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}${off}`;
 }
 export const hm = iso => (iso || "").slice(11, 16);
+
+// Bieżąca pełna godzina (0-23) w Europe/Warsaw, niezależnie od strefy urządzenia.
+export const warsawHour = (d = new Date()) => parseInt(nowIso(d).slice(11, 13), 10);
