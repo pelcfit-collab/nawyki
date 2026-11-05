@@ -59,18 +59,6 @@ export function tagsWidget(f, where, touch) {
     input.value = ""; draw();
   }
 
-  // v4: po jednym chipie na porcję; natywny <select> przykrywa chip.
-  function chipsRow(o, n) {
-    const arr = T.fitTimes(timesOf()[o.id], n);
-    return h("div", { class: "timechips" }, arr.map((hr, i) => {
-      const sel = h("select", { "data-k": o.id, "data-i": String(i), "aria-label": `${o.label}, porcja ${i + 1}: godzina`,
-        onchange: e => { const v = e.target.value; timesOf()[o.id] = T.setHour(arr, i, v === "" ? null : Number(v)); D_.values[f.id] = total(); touch(); draw(); } },
-        h("option", { value: "", selected: hr === null }, "nie pamiętam"),
-        T.HOURS.map(x => h("option", { value: String(x), selected: hr === x }, T.fmtHour(x))));
-      return h("span", { class: "timechip" + (hr === null ? " unknown" : "") }, T.fmtHour(hr), sel);
-    }));
-  }
-
   function draw() {
     const eff = effectiveOptions(f, where), selected = new Set(sel());
     const shown = eff.filter(o => T.isVisible(o) || selected.has(o.id));
@@ -120,6 +108,18 @@ export function countsWidget(f, touch) {
   const timed = T.withTime(f);
   const timesOf = () => ((D_.times ||= {})[f.id] ||= {});
   let openChip = null; // { id, i } - chip, którego wybór godziny ma się otworzyć po przerysowaniu
+  // v4: po jednym chipie na porcję; natywny <select> przykrywa chip.
+  function chipsRow(o, n) {
+    const arr = T.fitTimes(timesOf()[o.id], n);
+    return h("div", { class: "timechips" }, arr.map((hr, i) => {
+      const sel = h("select", { "data-k": o.id, "data-i": String(i), "aria-label": `${o.label}, porcja ${i + 1}: godzina`,
+        onchange: e => { const v = e.target.value; timesOf()[o.id] = T.setHour(arr, i, v === "" ? null : Number(v)); D_.values[f.id] = total(); touch(); draw(); } },
+        h("option", { value: "", selected: hr === null }, "nie pamiętam"),
+        T.HOURS.map(x => h("option", { value: String(x), selected: hr === x }, T.fmtHour(x))));
+      return h("span", { class: "timechip" + (hr === null ? " unknown" : "") }, T.fmtHour(hr), sel);
+    }));
+  }
+
   function setN(id, n) {
     const s = split(), old = s[id] || 0;
     if (timed) {
