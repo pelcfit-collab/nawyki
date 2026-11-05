@@ -22,7 +22,8 @@ button:disabled { opacity: .4; cursor: default; }
 header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 8px 10px;
   padding-top: calc(8px + env(safe-area-inset-top)); background: var(--bg); border-bottom: 1px solid var(--line); }
 .title { flex: 1; text-align: center; min-width: 0; }
-h1 { font-size: 1.15rem; text-transform: capitalize; }
+h1 { font-size: 1.15rem; }
+h1::first-letter, .monthbar span::first-letter { text-transform: uppercase; }
 .chip { display: inline-block; margin-top: 2px; padding: 1px 10px; border-radius: 99px; font-size: .75rem; background: var(--line); color: var(--muted); }
 .chip.ok { background: var(--accent-soft); color: var(--accent-d); }
 .chip.warn { color: var(--warn); }
@@ -82,7 +83,7 @@ nav button.on { color: var(--accent-d); font-weight: 700; }
 .empty { text-align: center; padding: 40px 12px; color: var(--muted); }
 
 /* historia */
-.monthbar { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 10px; text-transform: capitalize; }
+.monthbar { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 10px; }
 .calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .dow { text-align: center; font-size: .75rem; color: var(--muted); }
 .cal { position: relative; aspect-ratio: 1; min-height: 44px; border: 0; border-radius: 12px; background: var(--card);
