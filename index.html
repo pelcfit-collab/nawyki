@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16a34a">
+  <title>Nawyki</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="header">
+    <button id="prev" class="icon" aria-label="Poprzedni dzień">‹</button>
+    <div class="title">
+      <h1 id="dateLabel">…</h1>
+      <span id="chip" class="chip warn"></span>
+    </div>
+    <button id="next" class="icon" aria-label="Następny dzień">›</button>
+  </header>
+
+  <main>
+    <div id="tab-today">
+      <div id="form"></div>
+      <div class="savebar">
+        <span id="status" class="status" role="status"></span>
+        <button id="saveBtn" class="btn">Zapisz</button>
+      </div>
+    </div>
+    <div id="tab-history" hidden></div>
+    <div id="tab-settings" hidden></div>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <nav aria-label="Nawigacja">
+    <button data-tab="today" class="on"><span>✓</span>Dziś</button>
+    <button data-tab="history"><span>▦</span>Historia</button>
+    <button data-tab="settings"><span>⚙</span>Ustawienia</button>
+  </nav>
+
+  <noscript>Aplikacja wymaga JavaScriptu.</noscript>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
