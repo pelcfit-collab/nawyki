@@ -3,6 +3,8 @@ import { h, $, toast } from "./ui.js";
 import * as api from "./api.js";
 import * as D from "./dates.js";
 import { renderSettings, initSettings } from "./settings.js";
+import * as T from "./tags.js";
+import { tagsWidget } from "./tagsui.js";
 
 const dayPath = d => `days/${d}.json`;
 const activeFields = () => (S.config?.fields || []).filter(f => f.active !== false);
@@ -26,29 +28,63 @@ async function loadDayList() {
   } catch (e) { /* offline: zostaje cache */ }
 }
 
-function setDraft(data) {
+// Pola z listą wyboru: główne (type "tags") i szczegóły (detail.type "tags").
+function tagTargets() {
+  const out = [];
+  for (const f of activeFields()) {
+    if (f.type === "tags") out.push({ f, where: "main", opts: f.options || [] });
+    if (f.detail?.type === "tags") out.push({ f, where: "detail", opts: f.detail.options || [] });
+  }
+  return out;
+}
+
+function setDraft(data, ops) {
   const values = { ...(data?.values || {}) };
   for (const f of activeFields()) if (values[f.id] === undefined) values[f.id] = defaultOf(f);
-  S.draft = { values, details: { ...(data?.details || {}) }, note: data?.note || "" };
+  const details = { ...(data?.details || {}) }, legacy = {};
+  for (const { f, where, opts } of tagTargets()) {
+    const box = where === "main" ? values : details;
+    if (where === "detail" && typeof box[f.id] === "string") {
+      if (box[f.id].trim()) legacy[f.id] = box[f.id]; // stary tekstowy wpis: tylko do odczytu
+      delete box[f.id];
+    } else if (Array.isArray(box[f.id])) box[f.id] = T.resolveSelection(opts, box[f.id]);
+    else if (where === "main") box[f.id] = [];
+  }
+  S.draft = { values, details, legacy, pending: (ops || []).map(o => ({ ...o })), note: data?.note || "" };
   S.saved = data?.updatedAt || null;
 }
 
 function buildData() {
   const fields = S.config.fields, byId = Object.fromEntries(fields.map(f => [f.id, f]));
   const values = { ...S.draft.values }, details = {};
+  let note = S.draft.note.trim();
   for (const [id, v] of Object.entries(S.draft.details)) {
     const f = byId[id];
-    if (v === "" || v == null || (f && f.active !== false && !isPos(values[id]))) continue;
+    if (v === "" || v == null || (Array.isArray(v) && !v.length) || (f && f.active !== false && !isPos(values[id]))) continue;
     details[id] = v;
   }
-  return { date: S.date, values, details, note: S.draft.note.trim(), updatedAt: D.nowIso(), app: "nawyki/1" };
+  for (const [id, old] of Object.entries(S.draft.legacy || {})) {
+    const f = byId[id];
+    if (!f || f.active === false || !isPos(values[id])) continue;
+    if (!details[id]) details[id] = old; // brak wybranych tagów: stary tekst zostaje bez zmian
+    else if (!note.includes(old)) note += (note ? "\n" : "") + `${f.label} (stary wpis): ${old}`; // nic nie ginie
+  }
+  return { date: S.date, values, details, note, updatedAt: D.nowIso(), app: "nawyki/1" };
+}
+
+// Nowe/reaktywowane opcje, które zostały wybrane (odznaczone nie trafiają do config).
+function buildOps() {
+  return S.draft.pending.filter(p => {
+    const a = (p.where === "main" ? S.draft.values : S.draft.details)[p.fid];
+    return Array.isArray(a) && a.includes(p.id);
+  });
 }
 
 async function openDay(date) {
   S.date = date; S.err = ""; S.dirty = false;
   const q = queue().find(x => x.date === date), c = cachedDay(date);
   S.queued = !!q; S.sha = c?.sha || null;
-  setDraft(q?.data || c?.data || null);
+  setDraft(q?.data || c?.data || null, q?.ops);
   S.loading = !q && !!api.getToken();
   renderToday();
   if (!S.loading) return;
@@ -71,22 +107,41 @@ export async function goDate(date, { force = false } = {}) {
 
 /* ---------- zapis i kolejka offline ---------- */
 
+// Zapis nowych opcji do config.json (przed dniem). Przy konflikcie sha scala po id/etykiecie na świeżej wersji.
+async function persistOps(ops) {
+  let res;
+  const r = await api.saveJson("config.json", T.opsMessage(ops), remote => {
+    res = T.applyOps(remote === undefined ? S.config : (remote?.data ?? S.config), ops);
+    return res.cfg;
+  }, S.cfgSha);
+  S.config = res.cfg; S.cfgSha = r.sha; lsSet("config", S.config); lsSet("cfgsha", r.sha);
+  return res.remap;
+}
+
 async function save() {
   if (S.saving) return;
   if (!api.getToken()) { showTab("settings"); toast("Najpierw dodaj token"); return; }
-  const data = buildData(), date = S.date;
+  let data = buildData(), ops = buildOps();
+  const date = S.date;
   S.saving = true; S.err = ""; renderStatus();
+  const enqueue = () => {
+    setQueue([...queue().filter(x => x.date !== date), { date, data, ops }]);
+    S.dirty = false; S.queued = true; S.saved = null;
+  };
   try {
+    if (ops.length) {
+      try { data = T.applyRemap(data, await persistOps(ops)); ops = []; }
+      catch (e) { if (!api.isOffline(e)) throw e; enqueue(); S.saving = false; renderStatus(); return; }
+    }
     const r = await api.saveJson(dayPath(date), `dzień ${date}`, () => data, S.sha);
     S.sha = r.sha; S.days.add(date); lsSet("daylist", [...S.days]);
     cacheDay(date, { data, sha: r.sha });
     setQueue(queue().filter(x => x.date !== date));
     S.dirty = false; S.queued = false; S.saved = data.updatedAt;
+    if (S.date === date) { setDraft(data); S.saved = data.updatedAt; renderToday(); }
   } catch (e) {
-    if (api.isOffline(e)) {
-      setQueue([...queue().filter(x => x.date !== date), { date, data }]);
-      S.dirty = false; S.queued = true; S.saved = null;
-    } else S.err = api.describe(e);
+    if (api.isOffline(e)) enqueue(); // config już poszedł (ops puste) albo nie było nowych opcji
+    else S.err = api.describe(e);
   }
   S.saving = false;
   renderStatus();
@@ -98,12 +153,17 @@ async function flushQueue() {
   flushing = true;
   for (const item of queue()) {
     try {
+      let { data, ops = [] } = item;
+      if (ops.length) {
+        data = T.applyRemap(data, await persistOps(ops));
+        setQueue(queue().map(x => (x.date === item.date ? { date: item.date, data, ops: [] } : x)));
+      }
       const cur = await api.getFile(dayPath(item.date));
-      const r = await api.saveJson(dayPath(item.date), `dzień ${item.date}`, () => item.data, cur?.sha);
+      const r = await api.saveJson(dayPath(item.date), `dzień ${item.date}`, () => data, cur?.sha);
       setQueue(queue().filter(x => x.date !== item.date));
-      cacheDay(item.date, { data: item.data, sha: r.sha });
+      cacheDay(item.date, { data, sha: r.sha });
       S.days.add(item.date);
-      if (item.date === S.date && !S.dirty) { S.queued = false; S.sha = r.sha; S.saved = item.data.updatedAt; }
+      if (item.date === S.date && !S.dirty) { S.queued = false; S.sha = r.sha; setDraft(data); S.saved = data.updatedAt; renderToday(); }
       toast(`Wysłano z kolejki: ${item.date}`);
     } catch (e) {
       if (!api.isOffline(e)) toast("Kolejka: " + api.describe(e));
@@ -184,12 +244,19 @@ function fieldEl(f) {
         f.scaleLabels?.[i - min] ?? String(i)));
     }
     main = h("div", { class: "wide" }, h("div", { class: "lbl" }, f.label), h("div", { class: "segs" }, segs));
+  } else if (f.type === "tags") {
+    main = h("div", { class: "wide" }, h("div", { class: "lbl" }, f.label), tagsWidget(f, "main", touch));
   } else {
     main = h("label", { class: "wide" }, h("span", { class: "lbl" }, f.label),
       h("input", { type: "text", value: v ?? "", oninput: e => { S.draft.values[f.id] = e.target.value; touch(); } }));
   }
   if (!f.detail || !isPos(v)) return main;
   const d = f.detail, num = d.type === "number";
+  if (d.type === "tags") {
+    const old = S.draft.legacy?.[f.id];
+    return h("div", { class: "wide" }, main, h("div", { class: "detail" }, h("span", {}, d.label),
+      old ? h("p", { class: "legacy" }, "stary wpis: " + old) : null, tagsWidget(f, "detail", touch)));
+  }
   const input = h("input", { type: num ? "number" : "text", inputmode: num ? "decimal" : null, min: num ? "0" : null,
     value: S.draft.details[f.id] ?? "", placeholder: d.unit || "",
     oninput: e => {

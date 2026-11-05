@@ -134,3 +134,28 @@ details > summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
 .f.chk > span { margin: 0; font-size: 1rem; color: var(--text); }
 input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--accent); }
 .sub { margin-left: 8px; padding-left: 10px; border-left: 3px solid var(--accent-soft); }
+
+/* listy wyboru (tagi) */
+.tags { margin-top: 2px; }
+.tagchips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.tagchip { min-height: 44px; padding: 8px 14px; border: 2px solid var(--line); border-radius: 99px; background: var(--card); font-weight: 600; font-size: .92rem; }
+.tagchip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.sugg { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.sugg-i { min-height: 44px; padding: 8px 14px; text-align: left; border: 2px solid var(--line); border-radius: 12px; background: var(--card); }
+.sugg-i.add { border-style: dashed; color: var(--accent-d); font-weight: 600; }
+.sugg-i small { color: var(--muted); }
+.legacy { margin: 0 4px 8px; padding: 8px 12px; border-radius: 12px; background: var(--card); border: 1px dashed var(--line); color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+
+/* edytor opcji w ustawieniach */
+.opts { margin: 8px 0; }
+.opt { padding: 6px 0; border-top: 1px solid var(--line); }
+.opt .name { display: flex; align-items: center; gap: 8px; min-height: 44px; flex-wrap: wrap; }
+.opt .name b { font-weight: 600; }
+.opt.off .name b { opacity: .55; text-decoration: line-through; }
+.opt .name small { color: var(--muted); }
+.opt .btns { margin: 2px 0 6px; }
+.opt .btn { min-height: 44px; padding: 0 14px; font-size: .88rem; }
+.opt .mrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 6px; }
+.opt .mrow select { flex: 1; min-width: 140px; }
+.optadd { display: flex; gap: 8px; align-items: center; }
+.optadd .btn { padding: 0 16px; }

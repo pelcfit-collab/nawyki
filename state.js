@@ -28,6 +28,6 @@ export const cachedDay = date => ls("days", {})[date] || null;
 // pole -> wartość domyślna formularza
 export function defaultOf(f) {
   if (f.default !== undefined) return f.default;
-  return f.type === "bool" ? false : f.type === "text" ? "" : f.type === "scale" ? (f.min ?? 0) : 0;
+  return f.type === "bool" ? false : f.type === "text" ? "" : f.type === "tags" ? [] : f.type === "scale" ? (f.min ?? 0) : 0;
 }
-export const isPos = v => v === true || (typeof v === "number" && v > 0) || (typeof v === "string" && v.trim() !== "");
+export const isPos = v => Array.isArray(v) ? v.length > 0 : v === true || (typeof v === "number" && v > 0) || (typeof v === "string" && v.trim() !== "");

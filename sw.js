@@ -1,8 +1,8 @@
 // VERSION zmieniaj przy zmianie listy SHELL (fetch jest network-first, więc zwykłe zmiany przychodzą same).
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE = `nawyki-${VERSION}`;
 const SHELL = [
-  "./", "index.html", "style.css", "config.js", "app.js", "api.js", "dates.js", "state.js", "ui.js", "settings.js",
+  "./", "index.html", "style.css", "config.js", "app.js", "api.js", "dates.js", "state.js", "ui.js", "settings.js", "tags.js", "tagsui.js",
   "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"
 ];
 

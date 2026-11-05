@@ -3,6 +3,7 @@ import { S, lsSet, defaultOf } from "./state.js";
 import { h, $, toast } from "./ui.js";
 import * as api from "./api.js";
 import * as D from "./dates.js";
+import * as T from "./tags.js";
 
 const SUBS = "push/subscriptions.json";
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -197,18 +198,94 @@ function fieldsSection() {
 
 const labeled = (text, el) => h("label", { class: "f" }, h("span", {}, text), el);
 
+// Parsuje "a, b, c" na unikalne opcje (dedupe wg normalizacji).
+function parseOptions(text) {
+  const opts = [];
+  for (const part of String(text || "").split(",")) {
+    const label = T.capFirst(part);
+    if (label && !T.findMatch(opts, label)) opts.push({ id: T.uniqueSlug(label, opts), label });
+  }
+  return opts;
+}
+
+// Edytor opcji listy: zmiana nazwy, scalanie, ukrywanie, dodawanie. c = pole (type tags) albo f.detail (type tags).
+function optionsEditor(c) {
+  const opts = (c.options ||= []);
+  const merging = new Set();
+  const rows = h("div");
+  const labelOf = id => opts.find(o => o.id === id)?.label || id;
+  const change = () => { dirty(); drawRows(); };
+
+  function rowEl(o) {
+    const target = o.mergedInto ? T.resolveMerged(opts, o.id) : null;
+    const name = h("div", { class: "name" }, h("b", {}, o.label),
+      target ? h("small", {}, "scalona z: " + labelOf(target)) : null,
+      o.active === false && !target ? h("small", {}, "ukryta") : null);
+    const btns = h("div", { class: "btns" },
+      h("button", { class: "btn ghost", onclick: () => {
+        const v = prompt("Nowa nazwa opcji:", o.label);
+        const label = T.capFirst(v);
+        if (!label || label === o.label) return;
+        const clash = opts.find(x => x.id !== o.id && T.normalize(x.label) === T.normalize(label));
+        if (clash) return toast(`„${clash.label}” już istnieje. Użyj „Scal z…”.`);
+        o.label = label; change();
+      } }, "Zmień nazwę"),
+      target
+        ? h("button", { class: "btn ghost", onclick: () => { delete o.mergedInto; change(); } }, "Cofnij scalenie")
+        : [h("button", { class: "btn ghost", onclick: () => { merging.add(o.id); drawRows(); } }, "Scal z…"),
+           h("button", { class: "btn ghost", onclick: () => { if (o.active === false) delete o.active; else o.active = false; change(); } },
+             o.active === false ? "Pokaż" : "Ukryj")]);
+    const kids = [name, btns];
+    if (merging.has(o.id)) {
+      const cands = opts.filter(x => x.id !== o.id && !x.mergedInto && T.resolveMerged(opts, x.id) !== o.id);
+      const sel = h("select", { "aria-label": "Scal z" }, cands.map(x => h("option", { value: x.id }, x.label)));
+      kids.push(h("div", { class: "mrow" }, sel,
+        h("button", { class: "btn", disabled: !cands.length, onclick: () => {
+          const t = opts.find(x => x.id === sel.value);
+          if (!t || !confirm(`Scalić „${o.label}” z „${t.label}”? Wcześniejsze wpisy „${o.label}” będą liczone jako „${t.label}”.`)) return;
+          o.mergedInto = t.id; merging.delete(o.id); change();
+        } }, "Scal"),
+        h("button", { class: "btn ghost", onclick: () => { merging.delete(o.id); drawRows(); } }, "Anuluj")));
+    }
+    return h("div", { class: "opt" + (o.active === false || o.mergedInto ? " off" : "") }, kids);
+  }
+  const drawRows = () => rows.replaceChildren(...opts.map(rowEl), ...(opts.length ? [] : [h("p", { class: "hint" }, "Brak opcji.")]));
+
+  const input = h("input", { type: "text", placeholder: "Nowa opcja, np. Ból ucha", "aria-label": "Nowa opcja" });
+  const add = () => {
+    const label = T.capFirst(input.value);
+    if (!label) return;
+    const m = T.findMatch(opts, label);
+    if (m) {
+      if (m.active === false) { delete m.active; toast(`Przywrócono „${m.label}”`); change(); }
+      else toast(`„${m.label}” już jest na liście`);
+    } else { opts.push({ id: T.uniqueSlug(label, opts), label }); change(); }
+    input.value = "";
+  };
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+  drawRows();
+  return h("div", { class: "opts" }, h("h3", {}, "Opcje listy"), rows,
+    h("div", { class: "optadd" }, input, h("button", { class: "btn", onclick: add }, "Dodaj")),
+    h("p", { class: "hint" }, "Zmiany zapisują się dopiero przyciskiem „Zapisz pola”. Scalona opcja znika z wyboru, a stare wpisy liczą się jako docelowa."));
+}
+
 function fieldCard(f, i, n, move, redraw) {
   const inp = (type, key, extra = {}) => h("input", { type, value: f[key] ?? "", ...extra, oninput: e => { f[key] = e.target.value; dirty(); } });
   let def;
   if (f.type === "bool") def = h("input", { type: "checkbox", checked: !!f.default, onchange: e => { f.default = e.target.checked; dirty(); } });
+  else if (f.type === "tags") def = null;
   else if (f.type === "text") def = inp("text", "default");
   else def = h("input", { type: "number", value: f.default ?? defaultOf(f), min: f.min ?? 0, max: f.max, oninput: e => { f.default = parseInt(e.target.value, 10) || 0; dirty(); } });
   const det = f.detail;
   const detBox = det ? h("div", { class: "sub" },
-    labeled("Typ szczegółu", h("select", { onchange: e => { det.type = e.target.value; redraw(); } },
-      h("option", { value: "text", selected: det.type === "text" }, "tekst"), h("option", { value: "number", selected: det.type === "number" }, "liczba"))),
+    labeled("Typ szczegółu", h("select", { onchange: e => { det.type = e.target.value; if (det.type === "tags") det.options ||= []; redraw(); } },
+      h("option", { value: "tags", selected: det.type === "tags" }, "lista (tagi)"),
+      h("option", { value: "number", selected: det.type === "number" }, "liczba"),
+      h("option", { value: "text", selected: det.type === "text" }, "tekst (tylko notatka, nie do statystyk)"))),
     labeled("Etykieta szczegółu", h("input", { type: "text", value: det.label || "", oninput: e => { det.label = e.target.value; dirty(); } })),
-    det.type === "number" ? labeled("Jednostka szczegółu", h("input", { type: "text", value: det.unit || "", oninput: e => { det.unit = e.target.value; dirty(); } })) : null) : null;
+    det.type === "number" ? labeled("Jednostka szczegółu", h("input", { type: "text", value: det.unit || "", oninput: e => { det.unit = e.target.value; dirty(); } })) : null,
+    det.type === "tags" ? optionsEditor(det) : null,
+    det.type === "text" ? h("p", { class: "hint" }, "Wolny tekst nie trafia do statystyk. Do powtarzalnych danych wybierz listę (tagi).") : null) : null;
   return h("details", { class: "fcard" + (f.active === false ? " off" : "") },
     h("summary", {}, h("span", {}, f.label || f.id), h("small", {}, ` ${f.group || ""}${f.active === false ? " · nieaktywne" : ""}`),
       h("span", { class: "mv" },
@@ -217,10 +294,12 @@ function fieldCard(f, i, n, move, redraw) {
     h("div", { class: "fbody" },
       labeled("Etykieta", inp("text", "label")),
       labeled("Grupa", inp("text", "group", { list: "groupList" })),
-      labeled("Wartość domyślna", def),
+      def ? labeled("Wartość domyślna", def) : null,
+      f.type === "tags" ? optionsEditor(f) : null,
+      f.type === "text" ? h("p", { class: "hint" }, "Pole tekstowe służy tylko do notatki, nie do statystyk.") : null,
       f.type === "count" ? labeled("Jednostka", inp("text", "unit")) : null,
       f.type === "scale" ? h("p", { class: "hint" }, `Skala ${f.min}–${f.max}: ${(f.scaleLabels || []).join(" / ")}`) : null,
-      det ? detBox : h("button", { class: "btn ghost", onclick: () => { f.detail = { type: "text", label: "Szczegóły", showWhen: "positive" }; redraw(); } }, "Dodaj pole szczegółu"),
+      det ? detBox : h("button", { class: "btn ghost", onclick: () => { f.detail = { type: "tags", label: "Szczegóły", showWhen: "positive", options: [] }; redraw(); } }, "Dodaj pole szczegółu"),
       det ? h("button", { class: "btn ghost", onclick: () => { delete f.detail; redraw(); } }, "Usuń pole szczegółu") : null,
       h("label", { class: "f chk" }, h("input", { type: "checkbox", checked: f.active !== false, onchange: e => { f.active = e.target.checked; redraw(); } }), h("span", {}, "Aktywne")),
       h("p", { class: "hint" }, `id: ${f.id} (niezmienne). Nieaktywne pole znika z formularza, historia zostaje.`)));
@@ -229,27 +308,33 @@ function fieldCard(f, i, n, move, redraw) {
 function addFieldForm(redraw) {
   const q = (tag, attrs, ...k) => h(tag, attrs, ...k);
   const label = q("input", { type: "text", placeholder: "np. Kawa" });
-  const type = q("select", {}, ...[["bool", "tak/nie"], ["count", "licznik"], ["scale", "skala"], ["text", "tekst"]].map(([v, t]) => q("option", { value: v }, t)));
+  const type = q("select", {}, ...[["bool", "tak/nie"], ["count", "licznik"], ["scale", "skala"], ["tags", "lista (tagi)"], ["text", "tekst (tylko notatka, nie do statystyk)"]].map(([v, t]) => q("option", { value: v }, t)));
   const group = q("input", { type: "text", list: "groupList", placeholder: "np. Jedzenie" });
   const unit = q("input", { type: "text", placeholder: "np. porcje (licznik)" });
   const scale = q("input", { type: "text", placeholder: "np. brak, lekko, mocno (skala)" });
   const detOn = q("input", { type: "checkbox" });
-  const detType = q("select", {}, q("option", { value: "text" }, "tekst"), q("option", { value: "number" }, "liczba"));
+  const detType = q("select", {}, q("option", { value: "tags" }, "lista (tagi)"), q("option", { value: "number" }, "liczba"), q("option", { value: "text" }, "tekst (tylko notatka, nie do statystyk)"));
+  const opts = q("input", { type: "text", placeholder: "np. Katar, Kaszel, Ból głowy (lista)" });
+  const detOpts = q("input", { type: "text", placeholder: "Opcje szczegółu po przecinku (lista)" });
   const detLabel = q("input", { type: "text", placeholder: "Etykieta szczegółu, np. Ile minut?" });
   return h("div", { class: "card inner" }, h("h3", {}, "Dodaj pole"),
-    labeled("Etykieta", label), labeled("Typ", type), labeled("Grupa", group), labeled("Jednostka", unit), labeled("Etykiety skali", scale),
-    h("label", { class: "f chk" }, detOn, h("span", {}, "Pole szczegółu (gdy wartość dodatnia)")), labeled("Typ szczegółu", detType), labeled("Etykieta szczegółu", detLabel),
+    labeled("Etykieta", label), labeled("Typ", type), labeled("Grupa", group), labeled("Jednostka", unit), labeled("Etykiety skali", scale), labeled("Opcje listy (po przecinku)", opts),
+    h("label", { class: "f chk" }, detOn, h("span", {}, "Pole szczegółu (gdy wartość dodatnia)")), labeled("Typ szczegółu", detType), labeled("Etykieta szczegółu", detLabel), labeled("Opcje szczegółu (po przecinku)", detOpts),
     h("button", { class: "btn", onclick: () => {
       const l = label.value.trim();
       if (!l) return say("fld", "Podaj etykietę.", "bad");
-      const t = type.value, f = { id: slug(l), label: l, type: t, group: group.value.trim() || "Inne", default: t === "bool" ? false : t === "text" ? "" : 0 };
+      const t = type.value, f = { id: slug(l), label: l, type: t, group: group.value.trim() || "Inne", default: t === "bool" ? false : t === "text" ? "" : t === "tags" ? [] : 0 };
+      if (t === "tags") f.options = parseOptions(opts.value);
       if (t === "count" && unit.value.trim()) f.unit = unit.value.trim();
       if (t === "scale") {
         const ls = scale.value.split(",").map(s => s.trim()).filter(Boolean);
         if (ls.length < 2) return say("fld", "Skala wymaga co najmniej 2 etykiet po przecinku.", "bad");
         Object.assign(f, { min: 0, max: ls.length - 1, scaleLabels: ls });
       }
-      if (detOn.checked) f.detail = { type: detType.value, label: detLabel.value.trim() || "Szczegóły", showWhen: "positive", ...(detType.value === "number" && unit.value.trim() && t !== "count" ? { unit: unit.value.trim() } : {}) };
+      if (detOn.checked) {
+        f.detail = { type: detType.value, label: detLabel.value.trim() || "Szczegóły", showWhen: "positive", ...(detType.value === "number" && unit.value.trim() && t !== "count" ? { unit: unit.value.trim() } : {}) };
+        if (detType.value === "tags") f.detail.options = parseOptions(detOpts.value);
+      }
       f.active = true;
       S.edit.fields.push(f);
       redraw();
