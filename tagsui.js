@@ -160,8 +160,8 @@ export function countsWidget(f, touch) {
     const eff = effectiveOptions(f, where), s = split(), t = total(), open = !collapsed.has(f.id) && (expanded.has(f.id) || t > 0);
     const kinds = D_.legacyKinds?.[f.id] || [];
     const brief = Object.entries(s).filter(([, n]) => n > 0).map(([id, n]) => `${eff.find(o => o.id === id)?.label || id} ×${n}`).join(", ");
-    sumEl.replaceChildren(`${t}`, f.unit ? h("small", {}, " " + f.unit) : null,
-      !open && brief ? h("small", { class: "brief" }, brief) : null);
+    sumEl.replaceChildren(`${t}`, ...[f.unit ? h("small", {}, " " + f.unit) : null,
+      !open && brief ? h("small", { class: "brief" }, brief) : null].filter(Boolean));
     toggleBtn.textContent = open ? "Zwiń" : "Rodzaje";
     toggleBtn.setAttribute("aria-expanded", String(open));
     body.hidden = !open;
